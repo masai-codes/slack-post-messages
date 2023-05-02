@@ -139,6 +139,37 @@ app.get("/broadcasts", async (req, res) => {
   }
 });
 
+app.post("/slack/send-message", async (req, res) => {
+  try {
+    const { message, broadcastId, token } = req.body;
+    if (token !== process.env.VERIFICATION_TOKEN) {
+      return res.status(401).send("Unauthorized");
+    }
+    const broadcast = await Broadcast.findById(broadcastId)
+      .populate("postTo.team")
+      .lean();
+    if (!broadcast) {
+      return res.status(404).send("No records found.");
+    }
+    const { postTo } = broadcast;
+    const response = { success: [], failure: [] };
+    for (const { team, channelId } of postTo) {
+       const { data } = await postMessage(team.accessToken, channelId, message);
+       data.ok
+         ? response.success.push({ workspace: team.name })
+         : response.failure.push({ workspace: team.name, error: data.error });
+     }
+     response.failure.forEach(({ workspace, error }) => {
+        console.log(`Error posting to ${workspace}: ${error}`);
+      });
+     return res.status(200).json({
+      response
+     });
+  } catch (err) {
+    return res.status(500).send(`Something went wrong: ${err}`);
+  }
+});
+
 app.post("/slack/interactive-endpoint", async (req, res) => {
   try {
     const payload = JSON.parse(req.body.payload);
